@@ -6,7 +6,7 @@ import { defaultQuestions, parseQuestionsText } from './data/questions';
 export default function App() {
   const [status, setStatus] = useState<'start' | 'playing' | 'results'>('start');
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<number, number>>({});
   const [skipped, setSkipped] = useState<Record<number, boolean>>({});
   const [score, setScore] = useState(0);
 
@@ -35,18 +35,18 @@ export default function App() {
     setScore(0);
   };
 
-  const handleSelectOption = (option: string) => {
+  const handleSelectOption = (index: number, option: string) => {
     if (hasAnsweredOrSkipped) return;
     
     // Check if correct
-    const isCorrect = option === currentQuestion.answer;
+    const isCorrect = (index === currentQuestion.correctIndex) || (option === currentQuestion.answer);
     if (isCorrect) {
       setScore(s => s + 1);
     }
     
     setAnswers(prev => ({
       ...prev,
-      [currentIndex]: option
+      [currentIndex]: index
     }));
   };
 
@@ -72,14 +72,16 @@ export default function App() {
     }
   };
 
-  const getOptionStatus = (option: string) => {
+  const getOptionStatus = (index: number, option: string) => {
     if (!hasAnsweredOrSkipped) return 'idle';
     
+    const isThisOptionCorrect = (index === currentQuestion.correctIndex) || (option === currentQuestion.answer);
+
     // If user skipped or answered, we always reveal the correct answer.
-    if (option === currentQuestion.answer) return 'correct';
+    if (isThisOptionCorrect) return 'correct';
     
     // If the user selected this one and it's wrong:
-    if (answers[currentIndex] === option) return 'wrong';
+    if (answers[currentIndex] === index) return 'wrong';
     
     return 'dimmed';
   };
@@ -305,7 +307,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
                 {currentQuestion.options.map((option: string, index: number) => {
-                  const optStatus = getOptionStatus(option);
+                  const optStatus = getOptionStatus(index, option);
                   
                   let baseClasses = "relative w-full text-left p-6 rounded-[16px] border transition-all duration-200 outline-none flex items-start justify-between gap-4 ";
                   let icon = null;
@@ -326,7 +328,7 @@ export default function App() {
                     <button
                       key={index}
                       disabled={hasAnsweredOrSkipped}
-                      onClick={() => handleSelectOption(option)}
+                      onClick={() => handleSelectOption(index, option)}
                       className={baseClasses}
                     >
                       <div className="flex flex-col gap-1 w-full text-left">

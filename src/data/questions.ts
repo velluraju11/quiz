@@ -1,51 +1,98 @@
 export function parseQuestionsText(text: string) {
   const parsed = [];
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  const lines = text.split('\n');
   
   let currentQuestion: any = null;
+  let lastAppended = 'none'; // 'question' | 'option' | 'none'
   
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const rawLine = lines[i];
+    const line = rawLine.trim();
+    if (!line) continue;
     
-    // Match "1. Question text"
-    const qMatch = line.match(/^\d+\.\s+(.*)/);
+    // Check if new question
+    const qMatch = line.match(/^(?:Q\d+|\d+)[\.\)\-]\s+(.*)/i);
     if (qMatch) {
-      if (currentQuestion && currentQuestion.options && currentQuestion.options.length > 0 && currentQuestion.answer) {
+      if (currentQuestion && currentQuestion.options.length > 0 && (currentQuestion.correctIndex !== -1 || currentQuestion.answer)) {
         parsed.push(currentQuestion);
       }
       currentQuestion = {
         question: qMatch[1],
         options: [],
-        answer: ""
+        answer: "",
+        correctIndex: -1
       };
+      lastAppended = 'question';
       continue;
     }
     
-    // Match "A. Option", "a) Option"
-    const optMatch = line.match(/^([A-Da-d])[\.\)]\s+(.*)/);
+    // Check if option
+    const optMatch = line.match(/^([A-Za-z])[\.\)\-]\s+(.*)/);
     if (optMatch && currentQuestion) {
-      currentQuestion.options.push(optMatch[2]);
+      currentQuestion.options.push(optMatch[2].trim());
+      lastAppended = 'option';
       continue;
     }
     
-    // Match "Answer: C" or "Correct Answer: Full text"
-    const ansMatch = line.match(/^(?:Correct )?Answer:\s+(.*)/i);
+    // Check if answer
+    const ansMatch = line.match(/^(?:Correct\s+)?Answer:\s+(.*)/i);
     if (ansMatch && currentQuestion) {
-      const matchText = ansMatch[1].trim();
+      let matchText = ansMatch[1].trim();
       
-      if (/^[A-D]$/i.test(matchText)) {
-        const idx = matchText.toUpperCase().charCodeAt(0) - 65;
-        if (currentQuestion.options[idx]) {
+      const letterMatch = matchText.match(/^([A-Za-z])[\.\)]?$/i);
+      if (letterMatch) {
+        const charCode = letterMatch[1].toUpperCase().charCodeAt(0);
+        const idx = charCode - 65;
+        if (idx >= 0 && idx < currentQuestion.options.length) {
+          currentQuestion.correctIndex = idx;
           currentQuestion.answer = currentQuestion.options[idx];
+        } else {
+          currentQuestion.answer = matchText;
         }
       } else {
         currentQuestion.answer = matchText;
+        // Try to figure out the right option index by matching string
+        let found = currentQuestion.options.findIndex((o: string) => o.toLowerCase() === matchText.toLowerCase());
+        if (found !== -1) {
+            currentQuestion.correctIndex = found;
+            currentQuestion.answer = currentQuestion.options[found];
+        } else {
+            // strip punctuation and extra spaces for fuzzy match
+            const sanitize = (s: string) => s.replace(/[^a-z0-9]/gi, '').toLowerCase();
+            const sMatch = sanitize(matchText);
+            let fuzzyFound = currentQuestion.options.findIndex((o: string) => {
+                const oSan = sanitize(o);
+                return oSan === sMatch || oSan.includes(sMatch) || sMatch.includes(oSan);
+            });
+            if (fuzzyFound !== -1) {
+                currentQuestion.correctIndex = fuzzyFound;
+                currentQuestion.answer = currentQuestion.options[fuzzyFound];
+            }
+        }
       }
       
+      lastAppended = 'none';
       parsed.push({...currentQuestion});
-      currentQuestion = null;
+      currentQuestion = null; // reset to avoid duplicate pushes
+      continue;
+    }
+    
+    // If it's a continuation of text
+    if (currentQuestion) {
+       if (lastAppended === 'question') {
+           currentQuestion.question += " " + line;
+       } else if (lastAppended === 'option' && currentQuestion.options.length > 0) {
+           currentQuestion.options[currentQuestion.options.length - 1] += " " + line;
+       }
     }
   }
+  
+  if (currentQuestion && currentQuestion.options.length > 0 && (currentQuestion.correctIndex !== -1 || currentQuestion.answer)) {
+      if (!parsed.find(p => p.question === currentQuestion.question)) {
+          parsed.push(currentQuestion);
+      }
+  }
+  
   return parsed;
 }
 
